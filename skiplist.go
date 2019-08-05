@@ -8,6 +8,12 @@ import (
 	"unsafe"
 )
 
+const (
+	GT = 0
+	EQ = 1
+	LT = 2
+)
+
 type SkipList struct {
 	head *HeadIndex
 }
@@ -16,10 +22,10 @@ var cmp = func(k1 []byte, k2 []byte) int {
 	return bytes.Compare(k1, k2)
 }
 
-var BASE_HEADER = make([]byte, 0)
+var bASE_HEADER = make([]byte, 0)
 
 func NewSkiplist() *SkipList {
-	p := (*interface{})(unsafe.Pointer(uintptr(unsafe.Pointer(&BASE_HEADER))))
+	p := (*interface{})(unsafe.Pointer(uintptr(unsafe.Pointer(&bASE_HEADER))))
 	node := NewNode(nil, p, nil)
 	return &SkipList{
 		head: NewHeadIndex(node, nil, nil, 1),
@@ -323,4 +329,112 @@ func (this *SkipList) doGet(key []byte) ([]byte, error) {
 	}
 	p := (*[]byte)(unsafe.Pointer(uintptr(unsafe.Pointer(node.value))))
 	return *p, nil
+}
+
+func (this *SkipList) CeilingKey(key []byte) (*[]byte, error) {
+	var n *Node
+	var err error
+	n, err = this.findNear(key, GT|EQ, cmp)
+	if err != nil {
+		return nil, err
+	}
+	if n == nil {
+		return nil, nil
+	} else {
+		return n.key, nil
+	}
+}
+
+func (this *SkipList) FloorKey(key []byte) (*[]byte, error) {
+	var n *Node
+	var err error
+	n, err = this.findNear(key, LT|EQ, cmp)
+	if err != nil {
+		return nil, err
+	}
+	if n == nil {
+		return nil, nil
+	} else {
+		return n.key, nil
+	}
+}
+
+func (this *SkipList) firstKey() (*[]byte, error) {
+	n := this.findFirst()
+	if n == nil {
+		return nil, errors.New("NullPointerException")
+	}
+	return n.key, nil
+}
+
+func (this *SkipList) findFirst() *Node {
+	var b *Node
+	var n *Node
+	for {
+		b = this.head.node
+		n = b.next
+		if b == nil {
+			return nil
+		}
+		if n.value != nil {
+			return n
+		}
+
+		n.helpDelete(b, n.next)
+	}
+}
+
+func (this *SkipList) findNear(key []byte, rel int, cmp func(k1 []byte, k2 []byte) int) (*Node, error) {
+	if key == nil {
+		return nil, errors.New("NullPointerException")
+	}
+	for {
+		b, err := this.findPredecessor(key, cmp)
+		if err != nil {
+			return nil, err
+		}
+		n := b.next
+
+		for {
+			var v *interface{}
+			if n == nil {
+				if rel&LT == 0 || b.isBaseHeader() {
+					return nil, nil
+				} else {
+					return b, nil
+				}
+			}
+
+			var f *Node = n.next
+			if n != b.next { // inconsistent read
+				break
+			}
+
+			v = n.value
+			if v == nil { // n is deleted
+				n.helpDelete(b, f)
+				break
+			}
+
+			if b.value == nil || unsafe.Pointer(v) == unsafe.Pointer(n) { // b is deleted
+				break
+			}
+
+			c := cmp(key, *n.key)
+			if (c == 0 && (rel&EQ) != 0) || (c < 0 && (rel&LT) == 0) {
+				return n, nil
+			}
+
+			if c <= 0 && (rel&LT) != 0 {
+				if b.isBaseHeader() {
+					return nil, nil
+				} else {
+					return b, nil
+				}
+			}
+
+			b = n
+			n = f
+		}
+	}
 }

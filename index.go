@@ -45,6 +45,10 @@ func (this *Node) helpDelete(b *Node, f *Node) {
 	}
 }
 
+func (this *Node) isBaseHeader() bool {
+	return unsafe.Pointer(this.value) == unsafe.Pointer(&bASE_HEADER)
+}
+
 type Index struct {
 	node  *Node
 	down  *Index
